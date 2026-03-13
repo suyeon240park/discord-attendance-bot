@@ -11,7 +11,7 @@ import { parseSlotTimeRange, formatSlotTime } from '../utils/time';
 export const data = new SlashCommandBuilder()
   .setName('slot')
   .setDescription('Manage study slots (Admin only)')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator | PermissionFlagsBits.ManageGuild)
   .addSubcommand((sub) =>
     sub
       .setName('add')

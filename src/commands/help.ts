@@ -3,7 +3,6 @@ import {
   ChatInputCommandInteraction,
   EmbedBuilder,
   PermissionFlagsBits,
-  GuildMember,
 } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
 
@@ -12,12 +11,26 @@ export const data = new SlashCommandBuilder()
   .setDescription('Show available commands');
 
 export async function execute(interaction: ChatInputCommandInteraction, _prisma: PrismaClient) {
-  // Prefer GuildMember.permissions (fully resolved) over interaction.memberPermissions
-  // to correctly handle cached vs. API member objects.
-  const isAdmin =
-    interaction.member instanceof GuildMember
-      ? interaction.member.permissions.has(PermissionFlagsBits.Administrator)
-      : (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false);
+  if (!interaction.inGuild() || !interaction.guild) {
+    await interaction.reply({
+      content: 'This command can only be used in a server.',
+      ephemeral: true,
+    });
+    return;
+  }
+  
+  let isAdmin = false;
+  try {
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    isAdmin =
+      member.permissions.has(PermissionFlagsBits.Administrator) ||
+      member.permissions.has(PermissionFlagsBits.ManageGuild);
+  } catch {
+    // Fall back to interaction.memberPermissions if fetch fails
+    isAdmin =
+      (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false) ||
+      (interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false);
+  }
 
   const memberEmbed = new EmbedBuilder()
     .setColor(0x3b82f6)
@@ -103,7 +116,7 @@ export async function execute(interaction: ChatInputCommandInteraction, _prisma:
         value: 'Full attendance summary for all members. Defaults to the current month. Pass `YYYY-MM` for a specific month.',
       }
     )
-    .setFooter({ text: 'Admin commands are only visible to members with Administrator permission.' });
+    .setFooter({ text: 'Admin commands require Administrator or Manage Server permission.' });
 
   await interaction.reply({ embeds: [adminEmbed, memberEmbed, rulesEmbed], ephemeral: true });
 }

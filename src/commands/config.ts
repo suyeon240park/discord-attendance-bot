@@ -10,7 +10,7 @@ import { successEmbed } from '../utils/embeds';
 export const data = new SlashCommandBuilder()
   .setName('config')
   .setDescription('Configure bot settings (Admin only)')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator | PermissionFlagsBits.ManageGuild)
   .addSubcommand((sub) =>
     sub
       .setName('voice-channel')

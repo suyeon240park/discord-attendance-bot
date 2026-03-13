@@ -11,7 +11,7 @@ import { getCurrentYearMonth, formatSlotTime, DAY_NAMES } from '../utils/time';
 export const data = new SlashCommandBuilder()
   .setName('admin')
   .setDescription('Admin tools')
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator | PermissionFlagsBits.ManageGuild)
   .addSubcommand((sub) =>
     sub
       .setName('warnings')
