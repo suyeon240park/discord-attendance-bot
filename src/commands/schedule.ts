@@ -156,18 +156,19 @@ async function handleSet(
       ? `Currently enrolled on: **${currentDays.map((d) => DAY_NAMES[d]).join(', ')}**`
       : 'You are not currently enrolled in this slot.';
 
-    // Step 2: pick days for that slot
+    // Step 2: pick days for that slot (or None to remove)
     const dayMenu = new StringSelectMenuBuilder()
       .setCustomId('schedule_days')
       .setPlaceholder('Select days for this slot')
       .setMinValues(1)
-      .setMaxValues(7)
-      .addOptions(
-        [1, 2, 3, 4, 5, 6, 7].map((d) => ({
+      .setMaxValues(8)
+      .addOptions([
+        { label: 'None (remove this slot from my schedule)', value: 'none' },
+        ...[1, 2, 3, 4, 5, 6, 7].map((d) => ({
           label: DAY_NAMES[d],
           value: d.toString(),
-        }))
-      );
+        })),
+      ]);
 
     const dayRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(dayMenu);
     await slotResponse.update({
@@ -181,34 +182,39 @@ async function handleSet(
       time: 60_000,
     });
 
-    const selectedDays = dayResponse.values.map(Number);
+    const removingSlot = dayResponse.values.includes('none');
+    const selectedDays = removingSlot
+      ? []
+      : dayResponse.values.map(Number);
 
     // Only replace commitments for this specific slot — other slots are untouched
     await prisma.$transaction(async (tx) => {
       await tx.memberCommitment.deleteMany({ where: { guildId, userId, slotId: selectedSlotId } });
-      await tx.memberCommitment.createMany({
-        data: selectedDays.map((day) => ({
-          guildId,
-          userId,
-          slotId: selectedSlotId,
-          dayOfWeek: day,
-        })),
-      });
+      if (selectedDays.length > 0) {
+        await tx.memberCommitment.createMany({
+          data: selectedDays.map((day) => ({
+            guildId,
+            userId,
+            slotId: selectedSlotId,
+            dayOfWeek: day,
+          })),
+        });
+      }
     });
 
-    const dayLabels = selectedDays
-      .sort((a, b) => a - b)
-      .map((d) => DAY_SHORT[d])
-      .join(', ');
+    const confirmEmbed = removingSlot
+      ? successEmbed(
+          'Slot Removed',
+          `**${formatSlotTime(selectedSlot.startTime, selectedSlot.endTime)}** has been removed from your schedule.\n\nOther slots are unchanged.`
+        )
+      : successEmbed(
+          'Schedule Updated',
+          `**Slot:** ${formatSlotTime(selectedSlot.startTime, selectedSlot.endTime)}\n**Days:** ${selectedDays.sort((a, b) => a - b).map((d) => DAY_SHORT[d]).join(', ')}\n\nOther slots are unchanged. Run \`/schedule view\` to see your full schedule.`
+        );
 
     await dayResponse.update({
       content: null,
-      embeds: [
-        successEmbed(
-          'Schedule Updated',
-          `**Slot:** ${formatSlotTime(selectedSlot.startTime, selectedSlot.endTime)}\n**Days:** ${dayLabels}\n\nOther slots in your schedule are unchanged. Run \`/schedule view\` to see your full schedule.`
-        ),
-      ],
+      embeds: [confirmEmbed],
       components: [],
     });
   } catch {
