@@ -3,6 +3,7 @@ import {
   ChatInputCommandInteraction,
   EmbedBuilder,
   PermissionFlagsBits,
+  GuildMember,
 } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
 
@@ -11,7 +12,12 @@ export const data = new SlashCommandBuilder()
   .setDescription('Show available commands');
 
 export async function execute(interaction: ChatInputCommandInteraction, _prisma: PrismaClient) {
-  const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+  // Prefer GuildMember.permissions (fully resolved) over interaction.memberPermissions
+  // to correctly handle cached vs. API member objects.
+  const isAdmin =
+    interaction.member instanceof GuildMember
+      ? interaction.member.permissions.has(PermissionFlagsBits.Administrator)
+      : (interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false);
 
   const memberEmbed = new EmbedBuilder()
     .setColor(0x3b82f6)

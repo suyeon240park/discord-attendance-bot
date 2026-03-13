@@ -93,7 +93,7 @@ async function handleSet(
     return;
   }
 
-  // Fetch existing enrollment for all slots so descriptions can show current days
+  // Fetch this member's existing enrollment
   const existingCommitments = await prisma.memberCommitment.findMany({
     where: { guildId, userId },
     orderBy: { dayOfWeek: 'asc' },
@@ -106,7 +106,40 @@ async function handleSet(
     enrolledDaysBySlot.set(c.slotId, list);
   }
 
+  // Fetch enrollment counts per slot per day (all members)
+  const allEnrollments = await prisma.memberCommitment.groupBy({
+    by: ['slotId', 'dayOfWeek'],
+    where: { guildId },
+    _count: { dayOfWeek: true },
+    orderBy: [{ slotId: 'asc' }, { dayOfWeek: 'asc' }],
+  });
+
+  const enrollCountMap = new Map<number, Map<number, number>>();
+  for (const e of allEnrollments) {
+    if (!enrollCountMap.has(e.slotId)) enrollCountMap.set(e.slotId, new Map());
+    enrollCountMap.get(e.slotId)!.set(e.dayOfWeek, e._count.dayOfWeek);
+  }
+
+  // Build per-slot enrollment summary embed
+  const summaryLines: string[] = [];
+  for (const s of slots) {
+    const slotLabel = formatSlotTime(s.startTime, s.endTime);
+    const dayMap = enrollCountMap.get(s.id);
+    if (!dayMap || dayMap.size === 0) {
+      summaryLines.push(`**${slotLabel}**\n_No enrollments yet_`);
+    } else {
+      const counts: string[] = [];
+      for (let d = 1; d <= 7; d++) {
+        const count = dayMap.get(d);
+        if (count) counts.push(`${DAY_SHORT[d]}: **${count}**`);
+      }
+      summaryLines.push(`**${slotLabel}**\n${counts.join(' · ')}`);
+    }
+  }
+  const enrollmentEmbed = infoEmbed('📊 Current Enrollment', summaryLines.join('\n\n'));
+
   // Step 1: pick ONE slot to configure
+  // Dropdown description shows total enrolled for that slot + the member's own days
   const slotMenu = new StringSelectMenuBuilder()
     .setCustomId('schedule_slot')
     .setPlaceholder('Pick a slot to configure')
@@ -114,14 +147,17 @@ async function handleSet(
     .setMaxValues(1)
     .addOptions(
       slots.map((s) => {
-        const days = enrolledDaysBySlot.get(s.id);
-        const desc = days && days.length > 0
-          ? `Enrolled: ${days.map((d) => DAY_SHORT[d]).join(', ')}`
+        const userDays = enrolledDaysBySlot.get(s.id);
+        const userPart = userDays && userDays.length > 0
+          ? `You: ${userDays.map((d) => DAY_SHORT[d]).join(', ')}`
           : 'Not enrolled';
+        const dayMap = enrollCountMap.get(s.id);
+        const total = dayMap ? [...dayMap.values()].reduce((a, b) => a + b, 0) : 0;
+        const desc = `${total} enrolled · ${userPart}`;
         return {
           label: formatSlotTime(s.startTime, s.endTime),
           value: s.id.toString(),
-          description: desc,
+          description: desc.slice(0, 100),
         };
       })
     );
@@ -129,6 +165,7 @@ async function handleSet(
   const slotRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(slotMenu);
   const reply = await interaction.reply({
     content: '**Step 1/2:** Pick the slot you want to configure:',
+    embeds: [enrollmentEmbed],
     components: [slotRow],
     ephemeral: true,
   });
@@ -202,15 +239,35 @@ async function handleSet(
       }
     });
 
+    // Fetch per-day enrollment counts for this slot (all members, including the current user)
+    const enrollmentByDay = await prisma.memberCommitment.groupBy({
+      by: ['dayOfWeek'],
+      where: { guildId, slotId: selectedSlotId },
+      _count: { dayOfWeek: true },
+      orderBy: { dayOfWeek: 'asc' },
+    });
+
+    const enrollmentLines = enrollmentByDay.map(
+      (e) => `${DAY_SHORT[e.dayOfWeek]}: **${e._count.dayOfWeek}** enrolled`
+    );
+    const enrollmentSummary = enrollmentLines.length > 0
+      ? enrollmentLines.join(' · ')
+      : 'No members enrolled yet.';
+
+    const slotLabel = formatSlotTime(selectedSlot.startTime, selectedSlot.endTime);
+
     const confirmEmbed = removingSlot
       ? successEmbed(
           'Slot Removed',
-          `**${formatSlotTime(selectedSlot.startTime, selectedSlot.endTime)}** has been removed from your schedule.\n\nOther slots are unchanged.`
+          `**${slotLabel}** has been removed from your schedule.\n\nOther slots are unchanged.`
         )
       : successEmbed(
           'Schedule Updated',
-          `**Slot:** ${formatSlotTime(selectedSlot.startTime, selectedSlot.endTime)}\n**Days:** ${selectedDays.sort((a, b) => a - b).map((d) => DAY_SHORT[d]).join(', ')}\n\nOther slots are unchanged. Run \`/schedule view\` to see your full schedule.`
-        );
+          `**Slot:** ${slotLabel}\n**Your days:** ${selectedDays.sort((a, b) => a - b).map((d) => DAY_SHORT[d]).join(', ')}\n\nOther slots are unchanged. Run \`/schedule view\` to see your full schedule.`
+        ).addFields({
+          name: `📊 Enrollment for ${slotLabel}`,
+          value: enrollmentSummary,
+        });
 
     await dayResponse.update({
       content: null,

@@ -6,10 +6,13 @@ A Discord bot that automatically tracks attendance for recurring morning study s
 
 - Admin-defined study slots (e.g., `06:00-07:00`, `07:00-08:00`)
 - Members choose their recurring slots and days freely
+- Live enrollment counts per slot and day visible before committing
 - Automatic attendance check via voice channel presence at session start
+- 5-minute reminder before each session, with a roll call when it starts
 - Leave notice system (must submit at least 1 hour before session)
 - Monthly warning system with 5-warning threshold alerts
 - Full attendance reporting
+- Built-in `/help` command with role-aware instructions
 
 ## Setup
 
@@ -75,17 +78,30 @@ Run these commands in your Discord server (requires Administrator):
 | `/slot list` | List all active slots |
 | `/admin warnings <user>` | View a member's absence warnings for the current month |
 | `/admin attendance-report [month]` | View attendance summary (all members); optionally pass `YYYY-MM` |
+| `/admin enrollment` | View who is enrolled in each slot, broken down by day |
+| `/help` | Show all admin and member commands (admin sees both sections) |
 
 ### Member Commands
 
 | Command | Description |
 |---|---|
-| `/schedule set` | Set your recurring study schedule (pick slots and days interactively) |
-| `/schedule view` | View your current commitments |
-| `/schedule clear` | Remove all your commitments |
+| `/schedule set` | Enroll in a slot — shows live enrollment counts per day before you pick |
+| `/schedule remove` | Unenroll from a specific slot; other slots stay unchanged |
+| `/schedule view` | View your current commitments grouped by slot |
+| `/schedule clear` | Remove all your commitments across every slot |
 | `/leave submit <date> <slot>` | Submit a leave notice (`YYYY-MM-DD`, at least 1 hour before session) |
 | `/leave list` | View your upcoming leave notices |
 | `/warnings` | View your own warning count for the current month |
+| `/help` | Show all available member commands and attendance rules |
+
+### How `/schedule set` works
+
+1. Run `/schedule set` — an enrollment summary embed appears showing how many members are enrolled per slot per day before you make any selection.
+2. Pick a slot from the dropdown. The dropdown description also shows the total enrolled count and your current days for that slot at a glance.
+3. Choose which days to attend (Monday–Sunday). Select **None** to remove that slot from your schedule entirely.
+4. After confirming, the bot shows the updated per-day enrollment count for that slot.
+
+Each run of `/schedule set` configures one slot at a time. Your other slots are never affected.
 
 ## Attendance Rules
 

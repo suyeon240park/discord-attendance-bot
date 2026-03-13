@@ -1,11 +1,12 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
+  EmbedBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
 import { infoEmbed, errorEmbed } from '../utils/embeds';
-import { getCurrentYearMonth, formatSlotTime } from '../utils/time';
+import { getCurrentYearMonth, formatSlotTime, DAY_NAMES } from '../utils/time';
 
 export const data = new SlashCommandBuilder()
   .setName('admin')
@@ -24,6 +25,9 @@ export const data = new SlashCommandBuilder()
       .addStringOption((opt) =>
         opt.setName('month').setDescription('Month in YYYY-MM format (defaults to current)').setRequired(false)
       )
+  )
+  .addSubcommand((sub) =>
+    sub.setName('enrollment').setDescription('View who is enrolled in each slot and day')
   );
 
 export async function execute(interaction: ChatInputCommandInteraction, prisma: PrismaClient) {
@@ -34,6 +38,8 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
     await handleWarnings(interaction, prisma, guildId);
   } else if (subcommand === 'attendance-report') {
     await handleReport(interaction, prisma, guildId);
+  } else if (subcommand === 'enrollment') {
+    await handleEnrollment(interaction, prisma, guildId);
   }
 }
 
@@ -123,4 +129,77 @@ async function handleReport(
     embeds: [infoEmbed('Attendance Report', description)],
     ephemeral: true,
   });
+}
+
+async function handleEnrollment(
+  interaction: ChatInputCommandInteraction,
+  prisma: PrismaClient,
+  guildId: string
+) {
+  const slots = await prisma.slot.findMany({
+    where: { guildId, active: true },
+    orderBy: { startTime: 'asc' },
+  });
+
+  if (slots.length === 0) {
+    await interaction.reply({
+      embeds: [infoEmbed('Enrollment', 'No active slots. Use `/slot add` to create one.')],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const commitments = await prisma.memberCommitment.findMany({
+    where: { guildId },
+    orderBy: [{ slotId: 'asc' }, { dayOfWeek: 'asc' }],
+  });
+
+  // Group commitments: slotId → dayOfWeek → userId[]
+  const bySlot = new Map<number, Map<number, string[]>>();
+  for (const c of commitments) {
+    if (!bySlot.has(c.slotId)) bySlot.set(c.slotId, new Map());
+    const byDay = bySlot.get(c.slotId)!;
+    const users = byDay.get(c.dayOfWeek) ?? [];
+    users.push(c.userId);
+    byDay.set(c.dayOfWeek, users);
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x3b82f6)
+    .setTitle('📋 Enrollment by Slot')
+    .setTimestamp();
+
+  let totalEnrolled = 0;
+
+  for (const slot of slots) {
+    const slotLabel = formatSlotTime(slot.startTime, slot.endTime);
+    const byDay = bySlot.get(slot.id);
+
+    if (!byDay || byDay.size === 0) {
+      embed.addFields({ name: slotLabel, value: '_No members enrolled_', inline: false });
+      continue;
+    }
+
+    const dayLines: string[] = [];
+    // Iterate days in order Mon–Sun (1–7)
+    for (let d = 1; d <= 7; d++) {
+      const users = byDay.get(d);
+      if (!users || users.length === 0) continue;
+      totalEnrolled += users.length;
+      const mentions = users.map((id) => `<@${id}>`).join(', ');
+      dayLines.push(`**${DAY_NAMES[d]}** (${users.length}): ${mentions}`);
+    }
+
+    // Discord field value limit is 1024 chars — truncate gracefully
+    let fieldValue = dayLines.join('\n');
+    if (fieldValue.length > 1020) {
+      fieldValue = fieldValue.slice(0, 1020) + '…';
+    }
+
+    embed.addFields({ name: slotLabel, value: fieldValue, inline: false });
+  }
+
+  embed.setFooter({ text: `${totalEnrolled} total enrollment(s) across all slots` });
+
+  await interaction.reply({ embeds: [embed], ephemeral: true });
 }
