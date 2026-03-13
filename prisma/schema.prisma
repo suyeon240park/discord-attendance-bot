@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model GuildConfig {
+  guildId               String   @id
+  announcementChannelId String?
+  voiceChannelId        String?
+  timezone              String   @default("America/New_York")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Slot {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  startTime String
+  endTime   String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  commitments       MemberCommitment[]
+  leaveNotices      LeaveNotice[]
+  attendanceRecords AttendanceRecord[]
+
+  @@unique([guildId, startTime, endTime])
+}
+
+model MemberCommitment {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  slotId    Int
+  dayOfWeek Int
+  createdAt DateTime @default(now())
+
+  slot Slot @relation(fields: [slotId], references: [id])
+
+  @@unique([guildId, userId, slotId, dayOfWeek])
+}
+
+model LeaveNotice {
+  id          Int      @id @default(autoincrement())
+  guildId     String
+  userId      String
+  slotId      Int
+  date        String
+  reason      String?
+  submittedAt DateTime @default(now())
+
+  slot Slot @relation(fields: [slotId], references: [id])
+
+  @@unique([guildId, userId, slotId, date])
+}
+
+model AttendanceRecord {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  slotId    Int
+  date      String
+  status    String
+  checkedAt DateTime @default(now())
+
+  slot Slot @relation(fields: [slotId], references: [id])
+
+  @@unique([guildId, userId, slotId, date])
+}
