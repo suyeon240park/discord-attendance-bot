@@ -2,6 +2,7 @@ import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
 import { infoEmbed } from '../utils/embeds';
 import { getCurrentYearMonth } from '../utils/time';
+import { getGuildTimezone } from '../utils/db';
 
 export const data = new SlashCommandBuilder()
   .setName('warnings')
@@ -10,7 +11,8 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction, prisma: PrismaClient) {
   const guildId = interaction.guildId!;
   const userId = interaction.user.id;
-  const month = getCurrentYearMonth();
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const month = getCurrentYearMonth(guildTz);
 
   const count = await prisma.attendanceRecord.count({
     where: {

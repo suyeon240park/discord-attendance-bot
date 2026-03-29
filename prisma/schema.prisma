@@ -71,3 +71,8 @@ model AttendanceRecord {
 
   @@unique([guildId, userId, slotId, date])
 }
+
+model UserPreference {
+  userId   String @id
+  timezone String
+}

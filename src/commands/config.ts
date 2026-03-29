@@ -1,11 +1,14 @@
 import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
+  AutocompleteInteraction,
   ChannelType,
   PermissionFlagsBits,
 } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
-import { successEmbed } from '../utils/embeds';
+import { successEmbed, infoEmbed } from '../utils/embeds';
+import { isValidTimezone, nowInTz } from '../utils/time';
+import { searchTimezones, formatTimezoneChoices } from '../utils/timezones';
 
 export const data = new SlashCommandBuilder()
   .setName('config')
@@ -34,7 +37,25 @@ export const data = new SlashCommandBuilder()
           .addChannelTypes(ChannelType.GuildText)
           .setRequired(true)
       )
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName('timezone')
+      .setDescription('Set the server timezone for slot times')
+      .addStringOption((opt) =>
+        opt
+          .setName('timezone')
+          .setDescription('IANA timezone (e.g. America/New_York, Asia/Seoul)')
+          .setRequired(true)
+          .setAutocomplete(true)
+      )
   );
+
+export async function autocomplete(interaction: AutocompleteInteraction, _prisma: PrismaClient) {
+  const focused = interaction.options.getFocused();
+  const results = searchTimezones(focused);
+  await interaction.respond(formatTimezoneChoices(results));
+}
 
 export async function execute(interaction: ChatInputCommandInteraction, prisma: PrismaClient) {
   const subcommand = interaction.options.getSubcommand();
@@ -60,6 +81,38 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
     });
     await interaction.reply({
       embeds: [successEmbed('Announcement Channel Set', `Announcements will be posted in <#${channel.id}>`)],
+      ephemeral: true,
+    });
+  } else if (subcommand === 'timezone') {
+    const tz = interaction.options.getString('timezone', true);
+
+    if (!isValidTimezone(tz)) {
+      await interaction.reply({
+        embeds: [
+          infoEmbed(
+            'Invalid Timezone',
+            `\`${tz}\` is not a valid IANA timezone.\n\nExamples: \`America/New_York\`, \`Europe/London\`, \`Asia/Seoul\`, \`UTC\``
+          ),
+        ],
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await prisma.guildConfig.upsert({
+      where: { guildId },
+      update: { timezone: tz },
+      create: { guildId, timezone: tz },
+    });
+
+    const now = nowInTz(tz);
+    await interaction.reply({
+      embeds: [
+        successEmbed(
+          'Server Timezone Set',
+          `Server timezone has been set to **${tz}**.\nCurrent time there: **${now.toFormat('HH:mm (cccc)')}**\n\nAll slot times are interpreted in this timezone.`
+        ),
+      ],
       ephemeral: true,
     });
   }

@@ -5,9 +5,11 @@ import {
   getCurrentHHmm,
   getTodayDate,
   getISODayOfWeek,
-  formatSlotTime,
   getCurrentYearMonth,
   nowInTz,
+  discordSlotRange,
+  slotToUnixTimestamp,
+  discordTimestamp,
 } from '../utils/time';
 
 export function startAttendanceJob(client: Client, prisma: PrismaClient) {
@@ -24,6 +26,10 @@ export function startAttendanceJob(client: Client, prisma: PrismaClient) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getGuildTz(guildConfig: GuildConfig): string {
+  return guildConfig.timezone || 'America/New_York';
+}
 
 async function resolveChannels(
   client: Client,
@@ -71,13 +77,14 @@ async function resolveAnnouncementChannel(
 // ─── 5-minute reminder ────────────────────────────────────────────────────────
 
 async function checkReminders(client: Client, prisma: PrismaClient) {
-  const reminderTime = nowInTz().plus({ minutes: 5 }).toFormat('HH:mm');
-  const today = getTodayDate();
-  const todayDow = getISODayOfWeek();
-
   const configs = await prisma.guildConfig.findMany();
 
   for (const guildConfig of configs) {
+    const tz = getGuildTz(guildConfig);
+    const reminderTime = nowInTz(tz).plus({ minutes: 5 }).toFormat('HH:mm');
+    const today = getTodayDate(tz);
+    const todayDow = getISODayOfWeek(tz);
+
     const upcomingSlots = await prisma.slot.findMany({
       where: { guildId: guildConfig.guildId, startTime: reminderTime, active: true },
     });
@@ -94,7 +101,6 @@ async function checkReminders(client: Client, prisma: PrismaClient) {
 
       if (commitments.length === 0) continue;
 
-      // Exclude members who already submitted leave for this session
       const leaveUserIds = new Set(
         (
           await prisma.leaveNotice.findMany({
@@ -113,10 +119,11 @@ async function checkReminders(client: Client, prisma: PrismaClient) {
       if (attending.length === 0) continue;
 
       const mentions = attending.map((c) => `<@${c.userId}>`).join(' ');
-      const slotLabel = formatSlotTime(slot.startTime, slot.endTime);
+      const slotRange = discordSlotRange(today, slot.startTime, slot.endTime, tz);
+      const startUnix = slotToUnixTimestamp(today, slot.startTime, tz);
 
       await announcementChannel.send(
-        `🔔 **${slotLabel}** session starts in **5 minutes**!\n${mentions}`
+        `🔔 ${slotRange} session starts ${discordTimestamp(startUnix, 'R')}!\n${mentions}`
       );
     }
   }
@@ -125,14 +132,15 @@ async function checkReminders(client: Client, prisma: PrismaClient) {
 // ─── Session-start attendance check ──────────────────────────────────────────
 
 async function checkAttendance(client: Client, prisma: PrismaClient) {
-  const currentTime = getCurrentHHmm();
-  const today = getTodayDate();
-  const todayDow = getISODayOfWeek();
-  const yearMonth = getCurrentYearMonth();
-
   const configs = await prisma.guildConfig.findMany();
 
   for (const guildConfig of configs) {
+    const tz = getGuildTz(guildConfig);
+    const currentTime = getCurrentHHmm(tz);
+    const today = getTodayDate(tz);
+    const todayDow = getISODayOfWeek(tz);
+    const yearMonth = getCurrentYearMonth(tz);
+
     const matchingSlots = await prisma.slot.findMany({
       where: { guildId: guildConfig.guildId, startTime: currentTime, active: true },
     });
@@ -152,9 +160,8 @@ async function checkAttendance(client: Client, prisma: PrismaClient) {
 
       if (commitments.length === 0) continue;
 
-      const slotLabel = formatSlotTime(slot.startTime, slot.endTime);
+      const slotRange = discordSlotRange(today, slot.startTime, slot.endTime, tz);
 
-      // Collect statuses
       const presentIds: string[] = [];
       const absentResults: { userId: string; warningCount: number }[] = [];
       const fiveWarningIds: string[] = [];
@@ -215,11 +222,11 @@ async function checkAttendance(client: Client, prisma: PrismaClient) {
       if (presentIds.length > 0) {
         const mentions = presentIds.map((id) => `<@${id}>`).join(' ');
         await announcementChannel.send(
-          `✅ **${slotLabel}** session has started!\n🎉 Great work showing up: ${mentions}`
+          `✅ ${slotRange} session has started!\n🎉 Great work showing up: ${mentions}`
         );
       } else {
         await announcementChannel.send(
-          `✅ **${slotLabel}** session has started! (No members present)`
+          `✅ ${slotRange} session has started! (No members present)`
         );
       }
 
@@ -230,7 +237,7 @@ async function checkAttendance(client: Client, prisma: PrismaClient) {
             `• <@${userId}> — **${warningCount}** warning${warningCount !== 1 ? 's' : ''}`
         );
         await announcementChannel.send(
-          `⚠️ Absent from **${slotLabel}** on **${today}**:\n${lines.join('\n')}`
+          `⚠️ Absent from ${slotRange} on **${today}**:\n${lines.join('\n')}`
         );
       }
 
@@ -247,13 +254,14 @@ async function checkAttendance(client: Client, prisma: PrismaClient) {
 // ─── Startup: missed-session recovery ────────────────────────────────────────
 
 export async function checkMissedSessions(client: Client, prisma: PrismaClient) {
-  const today = getTodayDate();
-  const currentTime = getCurrentHHmm();
-  const todayDow = getISODayOfWeek();
-
   const configs = await prisma.guildConfig.findMany();
 
   for (const guildConfig of configs) {
+    const tz = getGuildTz(guildConfig);
+    const today = getTodayDate(tz);
+    const currentTime = getCurrentHHmm(tz);
+    const todayDow = getISODayOfWeek(tz);
+
     const pastSlots = await prisma.slot.findMany({
       where: {
         guildId: guildConfig.guildId,

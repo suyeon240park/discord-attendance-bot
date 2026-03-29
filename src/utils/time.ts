@@ -1,9 +1,23 @@
 import { DateTime } from 'luxon';
 
-export const TIMEZONE = 'America/New_York';
+export function nowInTz(timezone: string): DateTime {
+  return DateTime.now().setZone(timezone);
+}
 
-export function nowInTz(): DateTime {
-  return DateTime.now().setZone(TIMEZONE);
+export function getTodayDate(timezone: string): string {
+  return nowInTz(timezone).toFormat('yyyy-MM-dd');
+}
+
+export function getISODayOfWeek(timezone: string): number {
+  return nowInTz(timezone).weekday; // 1=Mon ... 7=Sun
+}
+
+export function getCurrentHHmm(timezone: string): string {
+  return nowInTz(timezone).toFormat('HH:mm');
+}
+
+export function getCurrentYearMonth(timezone: string): string {
+  return nowInTz(timezone).toFormat('yyyy-MM');
 }
 
 export function formatSlotTime(startTime: string, endTime: string): string {
@@ -34,20 +48,95 @@ export function parseSlotTimeRange(
   return { startTime: startRaw, endTime: endRaw };
 }
 
-export function getISODayOfWeek(): number {
-  return nowInTz().weekday; // 1=Mon ... 7=Sun
+/**
+ * Convert a date + HH:mm string in a given timezone to a Unix timestamp (seconds).
+ */
+export function slotToUnixTimestamp(date: string, timeHHmm: string, timezone: string): number {
+  const dt = DateTime.fromISO(`${date}T${timeHHmm}`, { zone: timezone });
+  return Math.floor(dt.toSeconds());
 }
 
-export function getTodayDate(): string {
-  return nowInTz().toFormat('yyyy-MM-dd');
+/**
+ * Returns a Discord dynamic timestamp string: `<t:UNIX:STYLE>`.
+ * Styles: t (short time), T (long time), d (short date), D (long date),
+ *         f (short datetime), F (long datetime), R (relative).
+ */
+export function discordTimestamp(unixSeconds: number, style: string = 't'): string {
+  return `<t:${unixSeconds}:${style}>`;
 }
 
-export function getCurrentYearMonth(): string {
-  return nowInTz().toFormat('yyyy-MM');
+/**
+ * Build a Discord timestamp range string for a slot on a given date.
+ * Returns e.g. `<t:UNIX:t> – <t:UNIX:t>` which Discord renders per-viewer.
+ */
+export function discordSlotRange(date: string, startTime: string, endTime: string, timezone: string): string {
+  const startUnix = slotToUnixTimestamp(date, startTime, timezone);
+  const endUnix = slotToUnixTimestamp(date, endTime, timezone);
+  return `${discordTimestamp(startUnix, 't')} – ${discordTimestamp(endUnix, 't')}`;
 }
 
-export function getCurrentHHmm(): string {
-  return nowInTz().toFormat('HH:mm');
+/**
+ * Convert an HH:mm time from one timezone to another on a specific date.
+ * Returns the converted HH:mm string and whether the day shifted.
+ */
+export function convertTime(
+  timeHHmm: string,
+  date: string,
+  fromTz: string,
+  toTz: string
+): { time: string; dayOffset: number } {
+  const dt = DateTime.fromISO(`${date}T${timeHHmm}`, { zone: fromTz });
+  const converted = dt.setZone(toTz);
+  const convertedDate = converted.toFormat('yyyy-MM-dd');
+  const dayOffset = DateTime.fromISO(convertedDate).diff(DateTime.fromISO(date), 'days').days;
+  return { time: converted.toFormat('HH:mm'), dayOffset: Math.round(dayOffset) };
+}
+
+/**
+ * Convert a slot time range from guild timezone to user timezone.
+ * Returns formatted strings for both timezones and a day-shift indicator.
+ */
+export function convertSlotTime(
+  startTime: string,
+  endTime: string,
+  date: string,
+  fromTz: string,
+  toTz: string
+): { startTime: string; endTime: string; dayOffset: number } {
+  const start = convertTime(startTime, date, fromTz, toTz);
+  const end = convertTime(endTime, date, fromTz, toTz);
+  return { startTime: start.time, endTime: end.time, dayOffset: start.dayOffset };
+}
+
+/**
+ * Format slot time for display to a user. If the user's timezone differs
+ * from the guild timezone, shows both with an annotation.
+ * Without a date, uses today in the guild timezone.
+ */
+export function formatSlotTimeForUser(
+  startTime: string,
+  endTime: string,
+  guildTz: string,
+  userTz?: string,
+  date?: string
+): string {
+  const guildLabel = formatSlotTime(startTime, endTime);
+  if (!userTz || userTz === guildTz) return guildLabel;
+
+  const effectiveDate = date ?? getTodayDate(guildTz);
+  const converted = convertSlotTime(startTime, endTime, effectiveDate, guildTz, userTz);
+  const userLabel = formatSlotTime(converted.startTime, converted.endTime);
+
+  if (userLabel === guildLabel) return guildLabel;
+
+  const dayNote = converted.dayOffset !== 0
+    ? ` (${converted.dayOffset > 0 ? '+' : ''}${converted.dayOffset}d)`
+    : '';
+  return `${guildLabel} (${userLabel} your time${dayNote})`;
+}
+
+export function isValidTimezone(tz: string): boolean {
+  return DateTime.now().setZone(tz).isValid;
 }
 
 export const DAY_NAMES: Record<number, string> = {

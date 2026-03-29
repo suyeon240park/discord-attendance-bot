@@ -7,6 +7,7 @@ import {
 import { PrismaClient } from '@prisma/client';
 import { infoEmbed, errorEmbed } from '../utils/embeds';
 import { getCurrentYearMonth, formatSlotTime, DAY_NAMES } from '../utils/time';
+import { getGuildTimezone } from '../utils/db';
 
 export const data = new SlashCommandBuilder()
   .setName('admin')
@@ -49,7 +50,8 @@ async function handleWarnings(
   guildId: string
 ) {
   const user = interaction.options.getUser('user', true);
-  const month = getCurrentYearMonth();
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const month = getCurrentYearMonth(guildTz);
 
   const absences = await prisma.attendanceRecord.findMany({
     where: {
@@ -84,7 +86,8 @@ async function handleReport(
   prisma: PrismaClient,
   guildId: string
 ) {
-  const month = interaction.options.getString('month') ?? getCurrentYearMonth();
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const month = interaction.options.getString('month') ?? getCurrentYearMonth(guildTz);
 
   if (!/^\d{4}-\d{2}$/.test(month)) {
     await interaction.reply({

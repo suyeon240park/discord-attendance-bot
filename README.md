@@ -1,11 +1,16 @@
 # Study Group Attendance Bot
 
-A Discord bot that automatically tracks attendance for recurring morning study sessions. Members commit to time slots and days, and the bot checks voice channel presence at each session start.
+A Discord bot that automatically tracks attendance for recurring study sessions. Members commit to time slots and days, and the bot checks voice channel presence at each session start.
 
 ## Features
 
 - Admin-defined study slots (e.g., `06:00-07:00`, `07:00-08:00`)
 - Members choose their recurring slots and days freely
+- Multi-slot enrollment — pick several slots and days in a single command
+- Additive scheduling — add new days without losing existing ones
+- Per-guild timezone configuration (slots are defined in the server's timezone)
+- Per-user timezone preferences — times are shown in your local timezone in personal responses
+- Public notifications use Discord dynamic timestamps, so every member sees times in their own timezone automatically
 - Live enrollment counts per slot and day visible before committing
 - Automatic attendance check via voice channel presence at session start
 - 5-minute reminder before each session, with a roll call when it starts
@@ -30,6 +35,7 @@ A Discord bot that automatically tracks attendance for recurring morning study s
 Generate an invite URL with these settings:
 - **Scopes:** `bot`, `applications.commands`
 - **Permissions:** Send Messages, View Channels, Connect
+- **Link:** https://discord.com/oauth2/authorize?client_id=1481820823986638969&scope=bot%20applications.commands&permissions=8
 
 ### 3. Configure Environment
 
@@ -59,6 +65,7 @@ Run these commands in your Discord server (requires Administrator):
 ```
 /config voice-channel channel:#your-study-voice-channel
 /config announcement-channel channel:#your-announcements-channel
+/config timezone timezone:America/New_York
 /slot add time:06:00-07:00
 /slot add time:07:00-08:00
 /slot add time:08:00-09:00
@@ -73,7 +80,8 @@ Run these commands in your Discord server (requires Administrator):
 |---|---|
 | `/config voice-channel <channel>` | Set the required attendance voice channel |
 | `/config announcement-channel <channel>` | Set the channel where absence alerts are posted |
-| `/slot add <time>` | Add a study slot — format: `HH:MM-HH:MM` (e.g. `06:00-07:00`) |
+| `/config timezone <timezone>` | Set the server timezone (IANA format, e.g. `America/New_York`, `Asia/Seoul`) |
+| `/slot add <time>` | Add a study slot — format: `HH:MM-HH:MM` (e.g. `06:00-07:00`) in server timezone |
 | `/slot remove <slot>` | Remove a slot — select from dropdown, no ID required |
 | `/slot list` | List all active slots |
 | `/admin warnings <user>` | View a member's absence warnings for the current month |
@@ -85,10 +93,12 @@ Run these commands in your Discord server (requires Administrator):
 
 | Command | Description |
 |---|---|
-| `/schedule set` | Enroll in a slot — shows live enrollment counts per day before you pick |
+| `/schedule set` | Enroll in one or more slots — shows live enrollment counts, lets you pick multiple slots and days at once |
 | `/schedule remove` | Unenroll from a specific slot; other slots stay unchanged |
-| `/schedule view` | View your current commitments grouped by slot |
+| `/schedule view` | View your current commitments grouped by slot (shown in your timezone) |
 | `/schedule clear` | Remove all your commitments across every slot |
+| `/timezone set <timezone>` | Set your personal timezone (IANA format, e.g. `Asia/Seoul`, `Europe/London`) |
+| `/timezone view` | View your current timezone setting |
 | `/leave submit <date> <slot>` | Submit a leave notice (`YYYY-MM-DD`, at least 1 hour before session) |
 | `/leave list` | View your upcoming leave notices |
 | `/warnings` | View your own warning count for the current month |
@@ -96,12 +106,18 @@ Run these commands in your Discord server (requires Administrator):
 
 ### How `/schedule set` works
 
-1. Run `/schedule set` — an enrollment summary embed appears showing how many members are enrolled per slot per day before you make any selection.
-2. Pick a slot from the dropdown. The dropdown description also shows the total enrolled count and your current days for that slot at a glance.
-3. Choose which days to attend (Monday–Sunday). Select **None** to remove that slot from your schedule entirely.
-4. After confirming, the bot shows the updated per-day enrollment count for that slot.
+1. Run `/schedule set` — an enrollment summary embed appears showing how many members are enrolled per slot per day.
+2. Pick one or more slots from the dropdown. The description shows total enrolled count and your current days per slot.
+3. Choose which days to add (Monday–Sunday). Selected days are **added** to your existing enrollment — days you already have are kept, not replaced.
+4. After confirming, the bot shows your final schedule for the selected slots.
 
-Each run of `/schedule set` configures one slot at a time. Your other slots are never affected.
+To remove days or unenroll from a slot, use `/schedule remove`.
+
+### Timezone support
+
+Slot times are always stored in the **server timezone** (set by an admin via `/config timezone`). Members can set their own timezone with `/timezone set`, and all personal responses (schedule view, leave list, etc.) will show times converted to their preference.
+
+Public messages — reminders, session-started announcements, and absence alerts — use Discord's dynamic timestamp format (`<t:UNIX:t>`), which automatically displays in every viewer's local timezone. No extra configuration needed.
 
 ## Attendance Rules
 

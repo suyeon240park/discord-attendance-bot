@@ -10,7 +10,8 @@ import {
 } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
 import { successEmbed, errorEmbed, infoEmbed } from '../utils/embeds';
-import { formatSlotTime, DAY_NAMES, DAY_SHORT } from '../utils/time';
+import { formatSlotTimeForUser, DAY_NAMES, DAY_SHORT } from '../utils/time';
+import { getGuildTimezone, getUserTimezone } from '../utils/db';
 
 export const data = new SlashCommandBuilder()
   .setName('schedule')
@@ -35,6 +36,9 @@ export async function autocomplete(interaction: AutocompleteInteraction, prisma:
   const guildId = interaction.guildId!;
   const userId = interaction.user.id;
 
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+
   const commitments = await prisma.memberCommitment.findMany({
     where: { guildId, userId },
     include: { slot: true },
@@ -49,7 +53,7 @@ export async function autocomplete(interaction: AutocompleteInteraction, prisma:
     if (!seen.has(c.slotId) && c.slot.active) {
       seen.add(c.slotId);
       options.push({
-        name: formatSlotTime(c.slot.startTime, c.slot.endTime),
+        name: formatSlotTimeForUser(c.slot.startTime, c.slot.endTime, guildTz, userTz),
         value: c.slotId,
       });
     }
@@ -80,6 +84,9 @@ async function handleSet(
   guildId: string,
   userId: string
 ) {
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+
   const slots = await prisma.slot.findMany({
     where: { guildId, active: true },
     orderBy: { startTime: 'asc' },
@@ -93,7 +100,6 @@ async function handleSet(
     return;
   }
 
-  // Fetch this member's existing enrollment
   const existingCommitments = await prisma.memberCommitment.findMany({
     where: { guildId, userId },
     orderBy: { dayOfWeek: 'asc' },
@@ -106,7 +112,6 @@ async function handleSet(
     enrolledDaysBySlot.set(c.slotId, list);
   }
 
-  // Fetch enrollment counts per slot per day (all members)
   const allEnrollments = await prisma.memberCommitment.groupBy({
     by: ['slotId', 'dayOfWeek'],
     where: { guildId },
@@ -120,10 +125,9 @@ async function handleSet(
     enrollCountMap.get(e.slotId)!.set(e.dayOfWeek, e._count.dayOfWeek);
   }
 
-  // Build per-slot enrollment summary embed
   const summaryLines: string[] = [];
   for (const s of slots) {
-    const slotLabel = formatSlotTime(s.startTime, s.endTime);
+    const slotLabel = formatSlotTimeForUser(s.startTime, s.endTime, guildTz, userTz);
     const dayMap = enrollCountMap.get(s.id);
     if (!dayMap || dayMap.size === 0) {
       summaryLines.push(`**${slotLabel}**\n_No enrollments yet_`);
@@ -138,13 +142,11 @@ async function handleSet(
   }
   const enrollmentEmbed = infoEmbed('📊 Current Enrollment', summaryLines.join('\n\n'));
 
-  // Step 1: pick ONE slot to configure
-  // Dropdown description shows total enrolled for that slot + the member's own days
   const slotMenu = new StringSelectMenuBuilder()
     .setCustomId('schedule_slot')
-    .setPlaceholder('Pick a slot to configure')
+    .setPlaceholder('Pick one or more slots')
     .setMinValues(1)
-    .setMaxValues(1)
+    .setMaxValues(Math.min(slots.length, 25))
     .addOptions(
       slots.map((s) => {
         const userDays = enrolledDaysBySlot.get(s.id);
@@ -155,7 +157,7 @@ async function handleSet(
         const total = dayMap ? [...dayMap.values()].reduce((a, b) => a + b, 0) : 0;
         const desc = `${total} enrolled · ${userPart}`;
         return {
-          label: formatSlotTime(s.startTime, s.endTime),
+          label: formatSlotTimeForUser(s.startTime, s.endTime, guildTz, userTz),
           value: s.id.toString(),
           description: desc.slice(0, 100),
         };
@@ -164,7 +166,7 @@ async function handleSet(
 
   const slotRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(slotMenu);
   const reply = await interaction.reply({
-    content: '**Step 1/2:** Pick the slot you want to configure:',
+    content: '**Step 1/2:** Pick the slot(s) you want to add days to:',
     embeds: [enrollmentEmbed],
     components: [slotRow],
     ephemeral: true,
@@ -177,10 +179,10 @@ async function handleSet(
       time: 60_000,
     });
 
-    const selectedSlotId = Number(slotResponse.values[0]);
-    const selectedSlot = slots.find((s) => s.id === selectedSlotId);
+    const selectedSlotIds = slotResponse.values.map(Number);
+    const selectedSlots = slots.filter((s) => selectedSlotIds.includes(s.id));
 
-    if (!selectedSlot) {
+    if (selectedSlots.length === 0) {
       await slotResponse.update({
         content: 'Invalid selection. Please use `/schedule set` to try again.',
         components: [],
@@ -188,28 +190,33 @@ async function handleSet(
       return;
     }
 
-    const currentDays = enrolledDaysBySlot.get(selectedSlotId);
-    const currentLabel = currentDays && currentDays.length > 0
-      ? `Currently enrolled on: **${currentDays.map((d) => DAY_NAMES[d]).join(', ')}**`
-      : 'You are not currently enrolled in this slot.';
+    const slotLabels = selectedSlots.map(
+      (s) => formatSlotTimeForUser(s.startTime, s.endTime, guildTz, userTz)
+    );
 
-    // Step 2: pick days for that slot (or None to remove)
+    const currentDaysSummary = selectedSlots.map((s) => {
+      const days = enrolledDaysBySlot.get(s.id);
+      const label = formatSlotTimeForUser(s.startTime, s.endTime, guildTz, userTz);
+      return days && days.length > 0
+        ? `**${label}**: ${days.sort((a, b) => a - b).map((d) => DAY_SHORT[d]).join(', ')}`
+        : `**${label}**: not enrolled`;
+    }).join('\n');
+
     const dayMenu = new StringSelectMenuBuilder()
       .setCustomId('schedule_days')
-      .setPlaceholder('Select days for this slot')
+      .setPlaceholder('Select days to add')
       .setMinValues(1)
-      .setMaxValues(8)
-      .addOptions([
-        { label: 'None (remove this slot from my schedule)', value: 'none' },
-        ...[1, 2, 3, 4, 5, 6, 7].map((d) => ({
+      .setMaxValues(7)
+      .addOptions(
+        [1, 2, 3, 4, 5, 6, 7].map((d) => ({
           label: DAY_NAMES[d],
           value: d.toString(),
-        })),
-      ]);
+        }))
+      );
 
     const dayRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(dayMenu);
     await slotResponse.update({
-      content: `**Step 2/2:** Choose days for **${formatSlotTime(selectedSlot.startTime, selectedSlot.endTime)}**\n${currentLabel}`,
+      content: `**Step 2/2:** Select days to **add** for **${slotLabels.join(', ')}**\nExisting days will be kept.\n\n${currentDaysSummary}`,
       components: [dayRow],
     });
 
@@ -219,55 +226,45 @@ async function handleSet(
       time: 60_000,
     });
 
-    const removingSlot = dayResponse.values.includes('none');
-    const selectedDays = removingSlot
-      ? []
-      : dayResponse.values.map(Number);
+    const selectedDays = dayResponse.values.map(Number);
 
-    // Only replace commitments for this specific slot — other slots are untouched
     await prisma.$transaction(async (tx) => {
-      await tx.memberCommitment.deleteMany({ where: { guildId, userId, slotId: selectedSlotId } });
-      if (selectedDays.length > 0) {
-        await tx.memberCommitment.createMany({
-          data: selectedDays.map((day) => ({
-            guildId,
-            userId,
-            slotId: selectedSlotId,
-            dayOfWeek: day,
-          })),
-        });
+      for (const slotId of selectedSlotIds) {
+        const existing = new Set(
+          (await tx.memberCommitment.findMany({
+            where: { guildId, userId, slotId },
+            select: { dayOfWeek: true },
+          })).map((c) => c.dayOfWeek)
+        );
+        const newDays = selectedDays.filter((d) => !existing.has(d));
+        if (newDays.length > 0) {
+          await tx.memberCommitment.createMany({
+            data: newDays.map((day) => ({
+              guildId,
+              userId,
+              slotId,
+              dayOfWeek: day,
+            })),
+          });
+        }
       }
     });
 
-    // Fetch per-day enrollment counts for this slot (all members, including the current user)
-    const enrollmentByDay = await prisma.memberCommitment.groupBy({
-      by: ['dayOfWeek'],
-      where: { guildId, slotId: selectedSlotId },
-      _count: { dayOfWeek: true },
-      orderBy: { dayOfWeek: 'asc' },
-    });
+    const resultLines: string[] = [];
+    for (const s of selectedSlots) {
+      const allDays = await prisma.memberCommitment.findMany({
+        where: { guildId, userId, slotId: s.id },
+        orderBy: { dayOfWeek: 'asc' },
+      });
+      const label = formatSlotTimeForUser(s.startTime, s.endTime, guildTz, userTz);
+      const dayStr = allDays.map((d) => DAY_SHORT[d.dayOfWeek]).join(', ');
+      resultLines.push(`**${label}** — ${dayStr}`);
+    }
 
-    const enrollmentLines = enrollmentByDay.map(
-      (e) => `${DAY_SHORT[e.dayOfWeek]}: **${e._count.dayOfWeek}** enrolled`
+    const confirmEmbed = successEmbed(
+      'Schedule Updated',
+      `${resultLines.join('\n')}\n\nRun \`/schedule view\` to see your full schedule.\nUse \`/schedule remove\` to unenroll from a slot.`
     );
-    const enrollmentSummary = enrollmentLines.length > 0
-      ? enrollmentLines.join(' · ')
-      : 'No members enrolled yet.';
-
-    const slotLabel = formatSlotTime(selectedSlot.startTime, selectedSlot.endTime);
-
-    const confirmEmbed = removingSlot
-      ? successEmbed(
-          'Slot Removed',
-          `**${slotLabel}** has been removed from your schedule.\n\nOther slots are unchanged.`
-        )
-      : successEmbed(
-          'Schedule Updated',
-          `**Slot:** ${slotLabel}\n**Your days:** ${selectedDays.sort((a, b) => a - b).map((d) => DAY_SHORT[d]).join(', ')}\n\nOther slots are unchanged. Run \`/schedule view\` to see your full schedule.`
-        ).addFields({
-          name: `📊 Enrollment for ${slotLabel}`,
-          value: enrollmentSummary,
-        });
 
     await dayResponse.update({
       content: null,
@@ -288,6 +285,9 @@ async function handleView(
   guildId: string,
   userId: string
 ) {
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+
   const commitments = await prisma.memberCommitment.findMany({
     where: { guildId, userId },
     include: { slot: true },
@@ -302,7 +302,6 @@ async function handleView(
     return;
   }
 
-  // Group by slot, show days for each
   const bySlot = new Map<number, { label: string; days: number[] }>();
   for (const c of commitments) {
     const existing = bySlot.get(c.slotId);
@@ -310,7 +309,7 @@ async function handleView(
       existing.days.push(c.dayOfWeek);
     } else {
       bySlot.set(c.slotId, {
-        label: formatSlotTime(c.slot.startTime, c.slot.endTime),
+        label: formatSlotTimeForUser(c.slot.startTime, c.slot.endTime, guildTz, userTz),
         days: [c.dayOfWeek],
       });
     }
@@ -335,6 +334,8 @@ async function handleRemove(
   userId: string
 ) {
   const slotId = interaction.options.getInteger('slot', true);
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
 
   const slot = await prisma.slot.findFirst({ where: { id: slotId, guildId } });
   if (!slot) {
@@ -349,9 +350,11 @@ async function handleRemove(
     where: { guildId, userId, slotId },
   });
 
+  const slotLabel = formatSlotTimeForUser(slot.startTime, slot.endTime, guildTz, userTz);
+
   if (deleted.count === 0) {
     await interaction.reply({
-      embeds: [infoEmbed('Not Enrolled', `You were not enrolled in **${formatSlotTime(slot.startTime, slot.endTime)}**.`)],
+      embeds: [infoEmbed('Not Enrolled', `You were not enrolled in **${slotLabel}**.`)],
       ephemeral: true,
     });
     return;
@@ -361,7 +364,7 @@ async function handleRemove(
     embeds: [
       successEmbed(
         'Slot Removed',
-        `You have been unenrolled from **${formatSlotTime(slot.startTime, slot.endTime)}**.\nYour other slots are unchanged.`
+        `You have been unenrolled from **${slotLabel}**.\nYour other slots are unchanged.`
       ),
     ],
     ephemeral: true,

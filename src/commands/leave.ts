@@ -6,7 +6,8 @@ import {
 import { PrismaClient } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { successEmbed, errorEmbed, infoEmbed } from '../utils/embeds';
-import { formatSlotTime, nowInTz, getTodayDate } from '../utils/time';
+import { formatSlotTimeForUser, nowInTz, getTodayDate } from '../utils/time';
+import { getGuildTimezone, getUserTimezone } from '../utils/db';
 
 export const data = new SlashCommandBuilder()
   .setName('leave')
@@ -31,6 +32,9 @@ export async function autocomplete(interaction: AutocompleteInteraction, prisma:
   const guildId = interaction.guildId!;
   const userId = interaction.user.id;
 
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+
   const commitments = await prisma.memberCommitment.findMany({
     where: { guildId, userId },
     include: { slot: true },
@@ -44,7 +48,7 @@ export async function autocomplete(interaction: AutocompleteInteraction, prisma:
     if (!seen.has(c.slotId)) {
       seen.add(c.slotId);
       options.push({
-        name: formatSlotTime(c.slot.startTime, c.slot.endTime),
+        name: formatSlotTimeForUser(c.slot.startTime, c.slot.endTime, guildTz, userTz),
         value: c.slotId,
       });
     }
@@ -75,7 +79,10 @@ async function handleSubmit(
   const slotId = interaction.options.getInteger('slot', true);
   const reason = interaction.options.getString('reason');
 
-  const parsedDate = DateTime.fromISO(dateStr, { zone: 'America/New_York' });
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+
+  const parsedDate = DateTime.fromISO(dateStr, { zone: guildTz });
   if (!parsedDate.isValid) {
     await interaction.reply({
       embeds: [errorEmbed('Invalid Date', 'Use YYYY-MM-DD format (e.g. 2026-03-15)')],
@@ -84,8 +91,8 @@ async function handleSubmit(
     return;
   }
 
-  const now = nowInTz();
-  const todayStr = getTodayDate();
+  const now = nowInTz(guildTz);
+  const todayStr = getTodayDate(guildTz);
 
   if (dateStr < todayStr) {
     await interaction.reply({
@@ -151,11 +158,13 @@ async function handleSubmit(
     throw err;
   }
 
+  const slotLabel = formatSlotTimeForUser(slot.startTime, slot.endTime, guildTz, userTz, dateStr);
+
   await interaction.reply({
     embeds: [
       successEmbed(
         'Leave Submitted',
-        `**Date:** ${dateStr} (${parsedDate.toFormat('cccc')})\n**Slot:** ${formatSlotTime(slot.startTime, slot.endTime)}` +
+        `**Date:** ${dateStr} (${parsedDate.toFormat('cccc')})\n**Slot:** ${slotLabel}` +
           (reason ? `\n**Reason:** ${reason}` : '') +
           '\n\n*This notice cannot be edited or withdrawn.*'
       ),
@@ -170,7 +179,9 @@ async function handleList(
   guildId: string,
   userId: string
 ) {
-  const todayStr = getTodayDate();
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+  const todayStr = getTodayDate(guildTz);
 
   const notices = await prisma.leaveNotice.findMany({
     where: { guildId, userId, date: { gte: todayStr } },
@@ -188,7 +199,8 @@ async function handleList(
 
   const lines = notices.map((n) => {
     const dayName = DateTime.fromISO(n.date).toFormat('cccc');
-    return `**${n.date}** (${dayName}) — ${formatSlotTime(n.slot.startTime, n.slot.endTime)}${n.reason ? ` — _${n.reason}_` : ''}`;
+    const slotLabel = formatSlotTimeForUser(n.slot.startTime, n.slot.endTime, guildTz, userTz, n.date);
+    return `**${n.date}** (${dayName}) — ${slotLabel}${n.reason ? ` — _${n.reason}_` : ''}`;
   });
 
   await interaction.reply({

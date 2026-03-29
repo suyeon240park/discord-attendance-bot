@@ -8,6 +8,7 @@ import * as leaveCmd from './leave';
 import * as adminCmd from './admin';
 import * as warningsCmd from './warnings';
 import * as helpCmd from './help';
+import * as timezoneCmd from './timezone';
 
 interface Command {
   data: { name: string; toJSON(): unknown };
@@ -15,7 +16,7 @@ interface Command {
   autocomplete?: (interaction: AutocompleteInteraction, prisma: PrismaClient) => Promise<void>;
 }
 
-const commandList: Command[] = [configCmd, slotCmd, scheduleCmd, leaveCmd, adminCmd, warningsCmd, helpCmd];
+const commandList: Command[] = [configCmd, slotCmd, scheduleCmd, leaveCmd, adminCmd, warningsCmd, helpCmd, timezoneCmd];
 
 export const commands = new Collection<string, Command>();
 for (const cmd of commandList) {
