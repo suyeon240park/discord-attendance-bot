@@ -6,7 +6,8 @@ import {
 } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
 import { successEmbed, errorEmbed, infoEmbed } from '../utils/embeds';
-import { parseSlotTimeRange, formatSlotTime } from '../utils/time';
+import { parseSlotTimeRange, formatSlotTimeForUser } from '../utils/time';
+import { getGuildTimezone, getUserTimezone } from '../utils/db';
 
 export const data = new SlashCommandBuilder()
   .setName('slot')
@@ -35,13 +36,17 @@ export const data = new SlashCommandBuilder()
 
 export async function autocomplete(interaction: AutocompleteInteraction, prisma: PrismaClient) {
   const guildId = interaction.guildId!;
+  const userId = interaction.user.id;
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+
   const slots = await prisma.slot.findMany({
     where: { guildId, active: true },
     orderBy: { startTime: 'asc' },
   });
   await interaction.respond(
     slots.map((s) => ({
-      name: formatSlotTime(s.startTime, s.endTime),
+      name: formatSlotTimeForUser(s.startTime, s.endTime, guildTz, userTz),
       value: s.id,
     }))
   );
@@ -50,6 +55,11 @@ export async function autocomplete(interaction: AutocompleteInteraction, prisma:
 export async function execute(interaction: ChatInputCommandInteraction, prisma: PrismaClient) {
   const subcommand = interaction.options.getSubcommand();
   const guildId = interaction.guildId!;
+  const userId = interaction.user.id;
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const userTz = await getUserTimezone(prisma, userId, guildTz);
+
+  const fmt = (start: string, end: string) => formatSlotTimeForUser(start, end, guildTz, userTz);
 
   if (subcommand === 'add') {
     const raw = interaction.options.getString('time', true);
@@ -71,7 +81,7 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
 
     if (existing && existing.active) {
       await interaction.reply({
-        embeds: [errorEmbed('Duplicate Slot', `Slot ${formatSlotTime(startTime, endTime)} already exists.`)],
+        embeds: [errorEmbed('Duplicate Slot', `Slot ${fmt(startTime, endTime)} already exists.`)],
         ephemeral: true,
       });
       return;
@@ -84,7 +94,7 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
     }
 
     await interaction.reply({
-      embeds: [successEmbed('Slot Added', `${formatSlotTime(startTime, endTime)} is now active.`)],
+      embeds: [successEmbed('Slot Added', `${fmt(startTime, endTime)} is now active.`)],
     });
   } else if (subcommand === 'remove') {
     const slotId = interaction.options.getInteger('slot', true);
@@ -107,8 +117,8 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
     const mentions = uniqueUsers.map((id) => `<@${id}>`).join(', ');
 
     const description = uniqueUsers.length > 0
-      ? `${formatSlotTime(slot.startTime, slot.endTime)} has been removed.\n\nAffected members: ${mentions}`
-      : `${formatSlotTime(slot.startTime, slot.endTime)} has been removed. No members were affected.`;
+      ? `${fmt(slot.startTime, slot.endTime)} has been removed.\n\nAffected members: ${mentions}`
+      : `${fmt(slot.startTime, slot.endTime)} has been removed. No members were affected.`;
 
     await interaction.reply({
       embeds: [successEmbed('Slot Removed', description)],
@@ -127,7 +137,7 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
       return;
     }
 
-    const lines = slots.map((s, i) => `**${i + 1}.** ${formatSlotTime(s.startTime, s.endTime)} (ID: ${s.id})`);
+    const lines = slots.map((s, i) => `**${i + 1}.** ${fmt(s.startTime, s.endTime)}`);
     await interaction.reply({
       embeds: [infoEmbed('Active Study Slots', lines.join('\n'))],
     });

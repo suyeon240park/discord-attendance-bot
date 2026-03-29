@@ -110,7 +110,7 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
       embeds: [
         successEmbed(
           'Server Timezone Set',
-          `Server timezone has been set to **${tz}**.\nCurrent time there: **${now.toFormat('HH:mm (cccc)')}**\n\nAll slot times are interpreted in this timezone.`
+          `Server timezone has been set to **${tz}**.\nCurrent time there: **${now.toFormat('h:mm a (cccc)')}**\n\nAll slot times are interpreted in this timezone.`
         ),
       ],
       ephemeral: true,

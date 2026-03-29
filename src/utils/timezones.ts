@@ -86,7 +86,7 @@ export function searchTimezones(query: string, limit: number = 25) {
 export function formatTimezoneChoices(entries: TimezoneEntry[]) {
   return entries.map((entry) => {
     const now = nowInTz(entry.value);
-    const label = `${entry.value} (${now.toFormat('HH:mm')})`;
+    const label = `${entry.value} (${now.toFormat('h:mm a')})`;
     return { name: label, value: entry.value };
   });
 }

@@ -64,7 +64,7 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
       embeds: [
         successEmbed(
           'Timezone Updated',
-          `Your timezone has been set to **${tz}**.\nCurrent time there: **${now.toFormat('HH:mm (cccc)')}**`
+          `Your timezone has been set to **${tz}**.\nCurrent time there: **${now.toFormat('h:mm a (cccc)')}**\n\nBot commands will show times in this timezone. Public announcements use Discord timestamps, which follow your device's timezone.`
         ),
       ],
       ephemeral: true,
@@ -90,7 +90,7 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
       embeds: [
         infoEmbed(
           'Your Timezone',
-          `**Timezone:** ${pref.timezone}\n**Current time:** ${now.toFormat('HH:mm (cccc)')}`
+          `**Timezone:** ${pref.timezone}\n**Current time:** ${now.toFormat('h:mm a (cccc)')}`
         ),
       ],
       ephemeral: true,

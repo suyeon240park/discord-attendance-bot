@@ -99,7 +99,7 @@ Run these commands in your Discord server (requires Administrator):
 | `/schedule clear` | Remove all your commitments across every slot |
 | `/timezone set <timezone>` | Set your personal timezone (IANA format, e.g. `Asia/Seoul`, `Europe/London`) |
 | `/timezone view` | View your current timezone setting |
-| `/leave submit <date> <slot>` | Submit a leave notice (`YYYY-MM-DD`, at least 1 hour before session) |
+| `/leave submit <date> <slot>` | Submit a leave notice (`YYYY-MM-DD`, anytime before the session date) |
 | `/leave list` | View your upcoming leave notices |
 | `/warnings` | View your own warning count for the current month |
 | `/help` | Show all available member commands and attendance rules |
@@ -115,15 +115,15 @@ To remove days or unenroll from a slot, use `/schedule remove`.
 
 ### Timezone support
 
-Slot times are always stored in the **server timezone** (set by an admin via `/config timezone`). Members can set their own timezone with `/timezone set`, and all personal responses (schedule view, leave list, etc.) will show times converted to their preference.
+Slot times are always stored in the **server timezone** (set by an admin via `/config timezone`). Members can set their own timezone with `/timezone set`, and all bot command responses will show times converted to their preference. All times are displayed in 12-hour AM/PM format.
 
-Public messages — reminders, session-started announcements, and absence alerts — use Discord's dynamic timestamp format (`<t:UNIX:t>`), which automatically displays in every viewer's local timezone. No extra configuration needed.
+Public messages — reminders, session-started announcements, and absence alerts — use Discord's dynamic timestamp format (`<t:UNIX:t>`), which automatically displays in every viewer's local timezone based on their device settings. The `/timezone set` preference only affects bot command responses, not Discord's rendering of public timestamps.
 
 ## Attendance Rules
 
 - At the exact session start time, the bot checks who is in the designated voice channel.
 - Not in the channel = **absent** (no grace period; late = absent).
-- Leave notice submitted 1+ hour before the session = **on leave** (not counted as absent).
+- Leave notice submitted before the session = **on leave** (not counted as absent).
 - Leave notices are **one-way** — they cannot be edited or withdrawn after submission.
 - **5 absences in a calendar month** triggers a public alert in the announcement channel.
 - Warning counts reset automatically at the start of each month.

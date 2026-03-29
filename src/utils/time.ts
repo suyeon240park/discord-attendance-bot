@@ -20,8 +20,15 @@ export function getCurrentYearMonth(timezone: string): string {
   return nowInTz(timezone).toFormat('yyyy-MM');
 }
 
+export function formatHHmmToAmPm(hhMm: string): string {
+  const [h, m] = hhMm.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return m === 0 ? `${hour12} ${period}` : `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
 export function formatSlotTime(startTime: string, endTime: string): string {
-  return `${startTime} – ${endTime}`;
+  return `${formatHHmmToAmPm(startTime)} – ${formatHHmmToAmPm(endTime)}`;
 }
 
 export function parseHHmm(time: string): { hour: number; minute: number } | null {
@@ -109,9 +116,8 @@ export function convertSlotTime(
 }
 
 /**
- * Format slot time for display to a user. If the user's timezone differs
- * from the guild timezone, shows both with an annotation.
- * Without a date, uses today in the guild timezone.
+ * Format slot time for display to a user, converted to their timezone.
+ * Falls back to guild timezone if no user timezone is set.
  */
 export function formatSlotTimeForUser(
   startTime: string,
@@ -120,19 +126,17 @@ export function formatSlotTimeForUser(
   userTz?: string,
   date?: string
 ): string {
-  const guildLabel = formatSlotTime(startTime, endTime);
-  if (!userTz || userTz === guildTz) return guildLabel;
+  if (!userTz || userTz === guildTz) return formatSlotTime(startTime, endTime);
 
   const effectiveDate = date ?? getTodayDate(guildTz);
   const converted = convertSlotTime(startTime, endTime, effectiveDate, guildTz, userTz);
-  const userLabel = formatSlotTime(converted.startTime, converted.endTime);
+  const label = formatSlotTime(converted.startTime, converted.endTime);
 
-  if (userLabel === guildLabel) return guildLabel;
-
-  const dayNote = converted.dayOffset !== 0
-    ? ` (${converted.dayOffset > 0 ? '+' : ''}${converted.dayOffset}d)`
-    : '';
-  return `${guildLabel} (${userLabel} your time${dayNote})`;
+  if (converted.dayOffset !== 0) {
+    const sign = converted.dayOffset > 0 ? '+' : '';
+    return `${label} (${sign}${converted.dayOffset}d)`;
+  }
+  return label;
 }
 
 export function isValidTimezone(tz: string): boolean {

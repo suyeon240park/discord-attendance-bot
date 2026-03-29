@@ -6,7 +6,7 @@ import {
 import { PrismaClient } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { successEmbed, errorEmbed, infoEmbed } from '../utils/embeds';
-import { formatSlotTimeForUser, nowInTz, getTodayDate } from '../utils/time';
+import { formatSlotTimeForUser, getTodayDate, getCurrentHHmm } from '../utils/time';
 import { getGuildTimezone, getUserTimezone } from '../utils/db';
 
 export const data = new SlashCommandBuilder()
@@ -91,7 +91,6 @@ async function handleSubmit(
     return;
   }
 
-  const now = nowInTz(guildTz);
   const todayStr = getTodayDate(guildTz);
 
   if (dateStr < todayStr) {
@@ -124,23 +123,12 @@ async function handleSubmit(
     return;
   }
 
-  if (dateStr === todayStr) {
-    const [startHour, startMin] = slot.startTime.split(':').map(Number);
-    const slotStart = now.set({ hour: startHour, minute: startMin, second: 0, millisecond: 0 });
-    const diffMinutes = slotStart.diff(now, 'minutes').minutes;
-
-    if (diffMinutes < 60) {
-      await interaction.reply({
-        embeds: [
-          errorEmbed(
-            'Too Late',
-            'Leave must be submitted at least 1 hour before the session start time.'
-          ),
-        ],
-        ephemeral: true,
-      });
-      return;
-    }
+  if (dateStr === todayStr && slot.startTime <= getCurrentHHmm(guildTz)) {
+    await interaction.reply({
+      embeds: [errorEmbed('Session Already Started', 'You cannot submit leave after the session has started.')],
+      ephemeral: true,
+    });
+    return;
   }
 
   try {

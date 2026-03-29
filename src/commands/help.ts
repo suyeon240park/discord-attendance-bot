@@ -54,7 +54,7 @@ export async function execute(interaction: ChatInputCommandInteraction, _prisma:
       },
       {
         name: '`/leave submit`',
-        value: 'Submit a leave notice for a session.\n**Format:** `/leave submit date:YYYY-MM-DD slot:(pick from list) reason:(optional)`\n⚠️ Must be submitted **at least 1 hour before** the session. Cannot be edited or withdrawn.',
+        value: 'Submit a leave notice for a session.\n**Format:** `/leave submit date:YYYY-MM-DD slot:(pick from list) reason:(optional)`\n⚠️ Must be submitted **before the session starts**. Cannot be edited or withdrawn.',
       },
       {
         name: '`/leave list`',

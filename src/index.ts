@@ -26,6 +26,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const command = commands.get(interaction.commandName);
     if (!command) return;
 
+    if (!interaction.inGuild()) {
+      await interaction.reply({ content: 'This bot can only be used in a server.', ephemeral: true });
+      return;
+    }
+
     try {
       await command.execute(interaction, prisma);
     } catch (err) {
@@ -39,12 +44,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   } else if (interaction.isAutocomplete()) {
     const command = commands.get(interaction.commandName);
-    if (command?.autocomplete) {
-      try {
-        await command.autocomplete(interaction, prisma);
-      } catch (err) {
-        console.error(`[Autocomplete] Error in /${interaction.commandName}:`, err);
-      }
+    if (!command?.autocomplete || !interaction.inGuild()) return;
+
+    try {
+      await command.autocomplete(interaction, prisma);
+    } catch (err) {
+      console.error(`[Autocomplete] Error in /${interaction.commandName}:`, err);
     }
   }
 });

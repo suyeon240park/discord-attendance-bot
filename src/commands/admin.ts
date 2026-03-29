@@ -6,8 +6,8 @@ import {
 } from 'discord.js';
 import { PrismaClient } from '@prisma/client';
 import { infoEmbed, errorEmbed } from '../utils/embeds';
-import { getCurrentYearMonth, formatSlotTime, DAY_NAMES } from '../utils/time';
-import { getGuildTimezone } from '../utils/db';
+import { getCurrentYearMonth, formatSlotTimeForUser, DAY_NAMES } from '../utils/time';
+import { getGuildTimezone, getUserTimezone } from '../utils/db';
 
 export const data = new SlashCommandBuilder()
   .setName('admin')
@@ -51,6 +51,7 @@ async function handleWarnings(
 ) {
   const user = interaction.options.getUser('user', true);
   const guildTz = await getGuildTimezone(prisma, guildId);
+  const adminTz = await getUserTimezone(prisma, interaction.user.id, guildTz);
   const month = getCurrentYearMonth(guildTz);
 
   const absences = await prisma.attendanceRecord.findMany({
@@ -70,7 +71,7 @@ async function handleWarnings(
 
   if (absences.length > 0) {
     const details = absences.map(
-      (a) => `${a.date} — ${formatSlotTime(a.slot.startTime, a.slot.endTime)}`
+      (a) => `${a.date} — ${formatSlotTimeForUser(a.slot.startTime, a.slot.endTime, guildTz, adminTz, a.date)}`
     );
     description += '\n\n**Absence details:**\n' + details.join('\n');
   }
@@ -139,6 +140,9 @@ async function handleEnrollment(
   prisma: PrismaClient,
   guildId: string
 ) {
+  const guildTz = await getGuildTimezone(prisma, guildId);
+  const adminTz = await getUserTimezone(prisma, interaction.user.id, guildTz);
+
   const slots = await prisma.slot.findMany({
     where: { guildId, active: true },
     orderBy: { startTime: 'asc' },
@@ -175,7 +179,7 @@ async function handleEnrollment(
   let totalEnrolled = 0;
 
   for (const slot of slots) {
-    const slotLabel = formatSlotTime(slot.startTime, slot.endTime);
+    const slotLabel = formatSlotTimeForUser(slot.startTime, slot.endTime, guildTz, adminTz);
     const byDay = bySlot.get(slot.id);
 
     if (!byDay || byDay.size === 0) {
