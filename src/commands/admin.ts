@@ -65,9 +65,9 @@ async function handleWarnings(
     orderBy: { date: 'asc' },
   });
 
-  const warningCount = absences.length;
+  const warningCount = new Set(absences.map((a) => a.date)).size;
 
-  let description = `**Member:** <@${user.id}>\n**Month:** ${month}\n**Warnings:** ${warningCount}`;
+  let description = `**Member:** <@${user.id}>\n**Month:** ${month}\n**Absent days:** ${warningCount} / 5`;
 
   if (absences.length > 0) {
     const details = absences.map(

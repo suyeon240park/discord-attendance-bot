@@ -15,7 +15,7 @@ A Discord bot that automatically tracks attendance for recurring study sessions.
 - Automatic attendance check via voice channel presence at session start
 - 5-minute reminder before each session, with a roll call when it starts
 - Leave notice system (must submit at least 1 hour before session)
-- Monthly warning system with 5-warning threshold alerts
+- Monthly warning system — 5 absent days triggers a threshold alert (multiple missed sessions on the same day count as one absent day)
 - Full attendance reporting
 - Built-in `/help` command with role-aware instructions
 
@@ -81,7 +81,7 @@ Run these commands in your Discord server (requires Administrator):
 | `/config voice-channel <channel>` | Set the required attendance voice channel |
 | `/config announcement-channel <channel>` | Set the channel where absence alerts are posted |
 | `/config timezone <timezone>` | Set the server timezone (IANA format, e.g. `America/New_York`, `Asia/Seoul`) |
-| `/slot add <time>` | Add a study slot — format: `HH:MM-HH:MM` (e.g. `06:00-07:00`) in server timezone |
+| `/slot add <time>` | Add a study slot — format: `HH:MM-HH:MM` (e.g. `06:00-07:00`); overnight ranges like `23:00-00:00` are supported |
 | `/slot remove <slot>` | Remove a slot — select from dropdown, no ID required |
 | `/slot list` | List all active slots |
 | `/admin warnings <user>` | View a member's absence warnings for the current month |
@@ -125,7 +125,7 @@ Public messages — reminders, session-started announcements, and absence alerts
 - Not in the channel = **absent** (no grace period; late = absent).
 - Leave notice submitted before the session = **on leave** (not counted as absent).
 - Leave notices are **one-way** — they cannot be edited or withdrawn after submission.
-- **5 absences in a calendar month** triggers a public alert in the announcement channel.
+- **5 absent days in a calendar month** triggers a public alert in the announcement channel. Missing multiple sessions on the same day counts as one absent day.
 - Warning counts reset automatically at the start of each month.
 
 ## Production Deployment

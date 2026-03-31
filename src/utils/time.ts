@@ -42,7 +42,8 @@ export function parseHHmm(time: string): { hour: number; minute: number } | null
 
 /**
  * Parses "HH:MM-HH:MM" into { startTime, endTime } as "HH:mm" strings.
- * Returns null if the format is invalid or start >= end.
+ * Returns null if the format is invalid.
+ * Overnight ranges (e.g. "23:00-00:00") are allowed; start and end cannot be equal.
  */
 export function parseSlotTimeRange(
   raw: string
@@ -51,7 +52,7 @@ export function parseSlotTimeRange(
   if (parts.length !== 2) return null;
   const [startRaw, endRaw] = parts;
   if (!parseHHmm(startRaw) || !parseHHmm(endRaw)) return null;
-  if (startRaw >= endRaw) return null;
+  if (startRaw === endRaw) return null;
   return { startTime: startRaw, endTime: endRaw };
 }
 
@@ -75,10 +76,15 @@ export function discordTimestamp(unixSeconds: number, style: string = 't'): stri
 /**
  * Build a Discord timestamp range string for a slot on a given date.
  * Returns e.g. `<t:UNIX:t> – <t:UNIX:t>` which Discord renders per-viewer.
+ * For overnight slots (endTime < startTime) the end timestamp is anchored to the next day.
  */
 export function discordSlotRange(date: string, startTime: string, endTime: string, timezone: string): string {
   const startUnix = slotToUnixTimestamp(date, startTime, timezone);
-  const endUnix = slotToUnixTimestamp(date, endTime, timezone);
+  const endDate =
+    endTime < startTime
+      ? DateTime.fromISO(date, { zone: timezone }).plus({ days: 1 }).toFormat('yyyy-MM-dd')
+      : date;
+  const endUnix = slotToUnixTimestamp(endDate, endTime, timezone);
   return `${discordTimestamp(startUnix, 't')} – ${discordTimestamp(endUnix, 't')}`;
 }
 
@@ -111,7 +117,11 @@ export function convertSlotTime(
   toTz: string
 ): { startTime: string; endTime: string; dayOffset: number } {
   const start = convertTime(startTime, date, fromTz, toTz);
-  const end = convertTime(endTime, date, fromTz, toTz);
+  const endDate =
+    endTime < startTime
+      ? DateTime.fromISO(date).plus({ days: 1 }).toFormat('yyyy-MM-dd')
+      : date;
+  const end = convertTime(endTime, endDate, fromTz, toTz);
   return { startTime: start.time, endTime: end.time, dayOffset: start.dayOffset };
 }
 

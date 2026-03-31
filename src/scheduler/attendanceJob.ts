@@ -205,14 +205,17 @@ async function checkAttendance(client: Client, prisma: PrismaClient) {
         if (status === 'present') {
           presentIds.push(userId);
         } else if (status === 'absent') {
-          const warningCount = await prisma.attendanceRecord.count({
+          const absentDates = await prisma.attendanceRecord.findMany({
             where: {
               guildId: guildConfig.guildId,
               userId,
               status: 'absent',
               date: { startsWith: yearMonth },
             },
+            distinct: ['date'],
+            select: { date: true },
           });
+          const warningCount = absentDates.length;
           absentResults.push({ userId, warningCount });
           if (warningCount === 5) fiveWarningIds.push(userId);
         }
@@ -241,10 +244,10 @@ async function checkAttendance(client: Client, prisma: PrismaClient) {
         );
       }
 
-      // ── 5-warning alerts ──
+      // ── 5-day absence alerts ──
       for (const userId of fiveWarningIds) {
         await announcementChannel.send(
-          `🚨 <@${userId}> has reached **5 warnings** this month (${yearMonth}). This member will be evicted from the server.`
+          `🚨 <@${userId}> has reached the **5-day absence threshold** for this month. This may result in removal from the server per group rules.`
         );
       }
     }

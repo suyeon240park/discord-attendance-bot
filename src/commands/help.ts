@@ -61,6 +61,14 @@ export async function execute(interaction: ChatInputCommandInteraction, _prisma:
         value: 'View all your upcoming leave notices.',
       },
       {
+        name: '`/timezone set`',
+        value: 'Set your personal timezone (IANA format, e.g. `Asia/Seoul`, `America/New_York`). Bot responses will show slot times converted to your timezone.',
+      },
+      {
+        name: '`/timezone view`',
+        value: 'View your current timezone setting.',
+      },
+      {
         name: '`/warnings`',
         value: 'Check how many absence warnings you have accumulated this month.',
       }
@@ -74,7 +82,7 @@ export async function execute(interaction: ChatInputCommandInteraction, _prisma:
       '• Not in the channel at that moment = **absent** (no grace period — late counts as absent).\n' +
       '• A valid leave notice = **on leave** (not counted as absent).\n' +
       '• Leave notices are **one-way** — no editing, no withdrawal.\n' +
-      '• **5 absences in a calendar month** triggers a public alert in the announcement channel.\n' +
+      '• **5 absent days in a calendar month** triggers a public alert in the announcement channel (missing multiple sessions on the same day counts as one absent day).\n' +
       '• Warning counts **reset automatically** at the start of each month.'
     );
 
@@ -94,6 +102,10 @@ export async function execute(interaction: ChatInputCommandInteraction, _prisma:
       {
         name: '`/config announcement-channel`',
         value: 'Set the text channel where absence alerts and session messages are posted.',
+      },
+      {
+        name: '`/config timezone`',
+        value: 'Set the server timezone (IANA format, e.g. `America/New_York`, `Asia/Seoul`). All slot times are stored and evaluated in this timezone.',
       },
       {
         name: '`/slot add time:HH:MM-HH:MM`',

@@ -14,20 +14,24 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
   const guildTz = await getGuildTimezone(prisma, guildId);
   const month = getCurrentYearMonth(guildTz);
 
-  const count = await prisma.attendanceRecord.count({
+  const absentDates = await prisma.attendanceRecord.findMany({
     where: {
       guildId,
       userId,
       status: 'absent',
       date: { startsWith: month },
     },
+    distinct: ['date'],
+    select: { date: true },
   });
+
+  const count = absentDates.length;
 
   await interaction.reply({
     embeds: [
       infoEmbed(
         'Your Warnings',
-        `**Month:** ${month}\n**Warnings:** ${count} / 5`
+        `**Month:** ${month}\n**Absent days:** ${count} / 5`
       ),
     ],
     ephemeral: true,

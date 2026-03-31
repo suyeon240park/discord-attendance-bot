@@ -67,7 +67,7 @@ export async function execute(interaction: ChatInputCommandInteraction, prisma: 
 
     if (!parsed) {
       await interaction.reply({
-        embeds: [errorEmbed('Invalid Format', 'Use `HH:MM-HH:MM` format with start before end (e.g. `06:00-07:00`).')],
+        embeds: [errorEmbed('Invalid Format', 'Use `HH:MM-HH:MM` format (e.g. `06:00-07:00` or `23:00-00:00` for overnight). Start and end cannot be the same.')],
         ephemeral: true,
       });
       return;
